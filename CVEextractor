@@ -1,0 +1,130 @@
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import time
+import os
+import re
+
+# === Setup ===
+chrome_options = Options()
+chrome_options.add_argument("--new-window")
+chrome_options.add_argument('--user-data-dir=' + os.path.expanduser('~/selenium-profile'))  
+chrome_options.add_argument('--profile-directory=Profile 1')  
+chrome_options.add_argument("--no-sandbox")
+chrome_options.add_argument("--disable-dev-shm-usage")
+
+service = Service('/Users/ag/.bin/chromedriver')  
+url = "https://community.expliot.io/assessment/firmware/fileScan?type=packages&firmwareId=86f3653a-63ba-4633-afa3-52ac2f05cbbd"
+driver = webdriver.Chrome(service=service, options=chrome_options)
+time.sleep(1)
+driver.get(url)
+
+wait = WebDriverWait(driver, 10)
+time.sleep(5)  # Wait for left panel to load
+
+# Dictionary to hold all package data
+data1 = {}
+
+# First, get all package names
+package_blocks = driver.find_elements(By.CSS_SELECTOR, "div.css-3ajk5, div.css-itplzt")
+package_headings = []
+for block in package_blocks:
+    title_attr = block.get_attribute("title")
+    if title_attr:
+        clean_title = title_attr.strip()
+        if clean_title not in package_headings:
+            package_headings.append(clean_title)
+    else:
+        try:
+            h2 = block.find_element(By.TAG_NAME, "h2")
+            clean_title = h2.text.strip()
+            if clean_title not in package_headings:
+                package_headings.append(clean_title)
+        except:
+            continue
+package_headings = [
+    h for h in package_headings
+    if h.strip() and not (
+        h.endswith(")0") or
+        (len(h) > 1 and h[-1] == "0" and not h[-2].isdigit())
+    )
+]
+
+print(f"Found {len(package_headings)} packages with CVEs")
+
+for heading in package_headings:
+    try:
+        heading_clean = re.sub(r"\)\d+$", ")", heading)  # Removes trailing CVE count like ')19'
+        if "(" in heading_clean and ")" in heading_clean:
+            name = heading_clean.split("(")[0].strip()
+            version = heading_clean.split("(")[1].replace(")", "").strip()
+        else:
+            name = heading_clean.strip()
+            version = ""
+
+        if not name:
+            continue
+
+        # Reload the page before processing each package
+        driver.get(url)
+        time.sleep(2)
+
+        # --- New block for robust package clicking with ellipsis/hover handling ---
+        pkg_blocks = driver.find_elements(By.CSS_SELECTOR, "div.css-3ajk5, div.css-itplzt")
+        for block in pkg_blocks:
+            try:
+                h2 = block.find_element(By.TAG_NAME, "h2")
+                visible = h2.text.strip()
+                if visible[-5:-2] == "...":
+                    # Hover to trigger tooltip
+                    webdriver.ActionChains(driver).move_to_element(h2).perform()
+                    title_attr = h2.get_attribute("title") or block.get_attribute("title")
+                    match_heading = title_attr.strip() if title_attr else visible
+                else:
+                    match_heading = visible
+
+                if match_heading.strip() == heading.strip():
+                    driver.execute_script("arguments[0].scrollIntoView(true);", block)
+                    time.sleep(0.5)
+                    driver.execute_script("arguments[0].click();", block)
+                    break
+            except:
+                continue
+        else:
+            raise Exception(f"No clickable element matched title: {heading}")
+        time.sleep(2)
+
+        try:
+            wait.until(EC.presence_of_all_elements_located((By.XPATH, "//h2[text()='CVEs']/following-sibling::div[1]//li")))
+            time.sleep(1)  # buffer to ensure all CVEs are rendered
+        except:
+            print(f"Timeout waiting for CVEs for {name}")
+
+        # Extract CVEs
+        cve_elements = driver.find_elements(By.XPATH, "//h2[text()='CVEs']/following-sibling::div[1]//li")
+        cves = set()
+        for el in cve_elements:
+            full_text = el.get_attribute("innerText").strip()
+            if full_text.startswith("CVE-"):
+                cves.add(full_text)
+        cves = sorted(cves)  # convert to sorted list
+
+        data1[name] = {
+            "package_name": name,
+            "package_version": version,
+            "cves": cves,
+            "cve_count": len(cves)
+        }
+
+    except Exception as e:
+        print(f"Error processing package '{heading}': {e}")
+
+driver.quit()
+
+import json
+with open("package_data.json", "w", encoding="utf-8") as f:
+    json.dump(data1, f, indent=4)
+print("Data saved to package_data.json")
