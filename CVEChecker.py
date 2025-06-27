@@ -1,9 +1,20 @@
+"""
+CVEChecker.py
+
+This script checks whether a list of CVEs still affect given software packages by querying the NVD API.
+For each package:
+  - It compares the package version against the vulnerable version ranges listed in each CVE entry.
+  - It ensures the CPE name matches, accounting for wildcards.
+  - It outputs updated results including matching and non-matching CVEs.
+
+Output: updated_package_data.json (list format with summary fields for each package)
+"""
+
 import json
 import os
 import time
 import requests
 
-print('hello')
 # Load package data from same directory
 script_dir = os.path.dirname(os.path.abspath(__file__))
 json_path = os.path.join(script_dir, "package_data.json")
@@ -12,7 +23,8 @@ with open(json_path, "r") as file:
     data = json.load(file)
 
 
-# Utility: version comparison
+# Compare two version strings (with optional alphabetic suffixes) using tuple comparison.
+# Returns -1 if v1 < v2, 0 if equal, 1 if v1 > v2.
 def compare_versions(v1, v2):
     def normalize(v):
         v = v.split('-')[0]
@@ -40,7 +52,7 @@ def compare_versions(v1, v2):
 
     return 0
 
-# Fetch CVE data
+# Fetch CVE data from the NVD API with basic rate limiting and error handling.
 def fetch_cve_data(cve_id):
     url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={cve_id}"
     try:
@@ -55,12 +67,16 @@ def fetch_cve_data(cve_id):
         print(f"Error fetching {cve_id}: {e}")
         return None
 
-# Main loop
+# Main processing loop over all packages in the JSON file.
+# For each package, it fetches all related CVEs and checks for:
+# - Exact or wildcard CPE match
+# - Version range matching
 for key, pkg in data.items():
     pkg_name = pkg["package_name"]
     pkg_version = pkg["package_version"]
     cves = pkg.get("cves", [])
 
+    # Record the CVEs that match or don't match based on version and CPE.
     matching = []
     non_matching = []
 
@@ -78,6 +94,8 @@ for key, pkg in data.items():
                 for node in config.get("nodes", []):
                     for cpe in node.get("cpeMatch", []):
                         criteria = cpe.get("criteria", "")
+                        # Determine if the CVE's CPE criteria matches the package's CPE name.
+                        # Supports wildcard '*' in any CPE field.
                         def cpe_matches(criteria, cpe_name):
                             parts1 = criteria.split(':')
                             parts2 = cpe_name.split(':')
@@ -131,7 +149,7 @@ for key, pkg in data.items():
     pkg["matching_cve_count"] = len(matching)
     pkg["non_matching_cve_count"] = len(non_matching)
 
-# Save updated output
+# Convert the results to a list format containing summary info for each package.
 output_path = os.path.join(script_dir, "updated_package_data.json")
 final_json = []
 for pkg in data.values():
@@ -146,6 +164,7 @@ for pkg in data.values():
         "non_matching_cves": pkg.get("non_matching_cves", []),
     })
 
+# Save final results as formatted JSON for reporting.
 with open(output_path, "w") as f:
     json.dump(final_json, f, indent=2)
 
