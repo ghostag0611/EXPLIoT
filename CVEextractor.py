@@ -8,14 +8,12 @@ import time
 import os
 import re
 
-# Import required libraries
-
 # === Configuration ===
-# Set the project name to be used for navigation
+# Define the project name you want to analyze. Update this value to switch projects.
 project_name = "your_project_name"  # Change this to the desired project name
 
 # === Setup ===
-# Configure Chrome WebDriver options and initialize the driver
+# Initialize Chrome browser with a persistent user profile to retain session data (e.g., cookies)
 chrome_options = Options()
 chrome_options.add_argument("--new-window")
 chrome_options.add_argument('--user-data-dir=' + os.path.expanduser('~/selenium-profile'))  
@@ -27,12 +25,12 @@ service = Service('/Users/ag/.bin/chromedriver')
 driver = webdriver.Chrome(service=service, options=chrome_options)
 time.sleep(1)
 
-# Navigate to the login page of Expliot and log in if not already logged in
+# Navigate to Expliot login page and attempt to log in
 driver.get("https://community.expliot.io/login")
 wait = WebDriverWait(driver, 10)
 time.sleep(1)
 
-# Try logging in using email and password if on login page
+# Wait for email and password fields to load, input credentials, and click login
 login_url = driver.current_url
 try:
     if "login" in login_url:
@@ -52,7 +50,7 @@ except Exception as e:
 
 time.sleep(1)
 
-# Click on the desired project by its name
+# Click on the specified project based on its visible name
 row_link = wait.until(EC.element_to_be_clickable((
     By.XPATH,
     f"//p[text()='{project_name}']"
@@ -60,11 +58,11 @@ row_link = wait.until(EC.element_to_be_clickable((
 driver.execute_script("arguments[0].click();", row_link)
 time.sleep(1)
 
-# Click on the first available assessment (e.g., 'V1')
+# Click on the first assessment (typically labeled 'V1')
 wait.until(EC.element_to_be_clickable((By.XPATH, "//p[contains(text(), 'V1')]"))).click()
 time.sleep(1)
 
-# Navigate to the Firmware tab using side navigation
+# Navigate to the Firmware section in the left-hand side panel
 firmware_element = wait.until(EC.element_to_be_clickable(
     (By.XPATH, "//a[@href='/assessment/firmware']//div[contains(text(), 'Firmware')]")
 ))
@@ -74,8 +72,7 @@ driver.execute_script("arguments[0].click();", firmware_element)
 time.sleep(1)
 
 
-# Scroll to and click the 'Packages' section header
-# Save the URL of the Packages page to reload it later in the loop
+# Scroll to the Packages section and click it; store the resulting URL for future reloads
 driver.execute_script("window.scrollBy(0, 1000);")
 packages_element = wait.until(EC.element_to_be_clickable(
     (By.XPATH, "//h2[contains(text(), 'Packages')]")
@@ -88,10 +85,11 @@ time.sleep(1)
 package_url = driver.current_url
 
 
-# Initialize dictionary to store extracted package and CVE data
+# === Data Extraction ===
+# Initialize dictionary to store package and CVE information
 data1 = {}
 
-# Extract all package names from the page
+# Locate package blocks and extract their headings, including hover-based full titles when truncated
 package_blocks = driver.find_elements(By.CSS_SELECTOR, "div.css-3ajk5, div.css-itplzt")
 package_headings = []
 for block in package_blocks:
@@ -109,7 +107,7 @@ for block in package_blocks:
         except:
             continue
 
-# Filter package names to avoid duplicates and unwanted entries
+# Filter out duplicate and irrelevant package headings (e.g., ones with 0 CVEs)
 package_headings = [
     h for h in package_headings
     if h.strip() and not (
@@ -120,25 +118,22 @@ package_headings = [
 
 print(f"Found {len(package_headings)} packages with CVEs")
 
-# Iterate through all package names to collect CVE data
+# For each package heading, reload the Packages page to reset the view
 for heading in package_headings:
     try:
         if not heading.strip():
             continue
 
-        # Reload the Packages page before processing each package to avoid stale element errors
         driver.get(package_url)
         time.sleep(2)
 
-        # Locate the correct package block and click it
-        # Handle case where package name may be truncated with '...'
+        # Locate the matching package block, hover if needed, and click to open details in the right pane
         pkg_blocks = driver.find_elements(By.CSS_SELECTOR, "div.css-3ajk5, div.css-itplzt")
         for block in pkg_blocks:
             try:
                 h2 = block.find_element(By.TAG_NAME, "h2")
                 visible = h2.text.strip()
                 if visible[-5:-2] == "...":
-                    # Hover to trigger tooltip
                     webdriver.ActionChains(driver).move_to_element(h2).perform()
                     title_attr = h2.get_attribute("title") or block.get_attribute("title")
                     match_heading = title_attr.strip() if title_attr else visible
@@ -156,6 +151,7 @@ for heading in package_headings:
             raise Exception(f"No clickable element matched title: {heading}")
         time.sleep(2)
 
+        # After clicking, extract the package name and version from the right pane
         try:
             name_elem = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "h2.chakra-heading.css-5lyheq")))
             name = name_elem.text.strip()
@@ -171,30 +167,30 @@ for heading in package_headings:
         if not name:
             continue
 
-        # Wait for CVEs to load after clicking the package
+        # Wait until CVE data is rendered in the CVEs section
         try:
             wait.until(EC.presence_of_all_elements_located((By.XPATH, "//h2[text()='CVEs']/following-sibling::div[1]//li")))
-            time.sleep(1)  # buffer to ensure all CVEs are rendered
+            time.sleep(1)
         except:
             print(f"Timeout waiting for CVEs for {name}")
 
-        # Extract all CVE identifiers listed for the current package
+        # Extract all CVE IDs (e.g., CVE-2023-xxxx) from the CVEs list
         cve_elements = driver.find_elements(By.XPATH, "//h2[text()='CVEs']/following-sibling::div[1]//li")
         cves = set()
         for el in cve_elements:
             full_text = el.get_attribute("innerText").strip()
             if full_text.startswith("CVE-"):
                 cves.add(full_text)
-        cves = sorted(cves)  # convert to sorted list
+        cves = sorted(cves)
 
-        # Extract CPE name
+        # Extract the corresponding CPE name listed in the right pane
         try:
             cpe_elem = driver.find_element(By.XPATH, "//h2[text()='cpe name']/following-sibling::p")
             cpe_name = cpe_elem.text.strip()
         except:
             cpe_name = ""
 
-        # Save the extracted information into the data dictionary
+        # Store all gathered data into the output dictionary under the package name key
         data1[name] = {
             "package_name": name,
             "package_version": version,
@@ -203,14 +199,14 @@ for heading in package_headings:
             "cves": cves
         }
 
-    # Handle exceptions gracefully and print error message if package processing fails
+    # Log and skip any package that causes an error during processing
     except Exception as e:
         print(f"Error processing package '{heading}': {e}")
 
-# Close the browser after data collection is complete
+# === Save & Exit ===
+# Close the browser and write the final data to a JSON file in the same folder as this script
 driver.quit()
 
-# Save the collected package data with CVEs into a JSON file in the same directory as the script
 import json
 output_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "package_data.json")
 with open(output_path, "w", encoding="utf-8") as f:
