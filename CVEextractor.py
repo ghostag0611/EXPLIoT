@@ -12,7 +12,7 @@ import re
 
 # === Configuration ===
 # Set the project name to be used for navigation
-project_name = "SP_sample-3.ima"  # Change this to the desired project name
+project_name = "your_project_name"  # Change this to the desired project name
 
 # === Setup ===
 # Configure Chrome WebDriver options and initialize the driver
@@ -123,15 +123,7 @@ print(f"Found {len(package_headings)} packages with CVEs")
 # Iterate through all package names to collect CVE data
 for heading in package_headings:
     try:
-        heading_clean = re.sub(r"\)\d+$", ")", heading)  # Removes trailing CVE count like ')19'
-        if "(" in heading_clean and ")" in heading_clean:
-            name = heading_clean.split("(")[0].strip()
-            version = heading_clean.split("(")[1].replace(")", "").strip()
-        else:
-            name = heading_clean.strip()
-            version = ""
-
-        if not name:
+        if not heading.strip():
             continue
 
         # Reload the Packages page before processing each package to avoid stale element errors
@@ -164,6 +156,21 @@ for heading in package_headings:
             raise Exception(f"No clickable element matched title: {heading}")
         time.sleep(2)
 
+        try:
+            name_elem = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "h2.chakra-heading.css-5lyheq")))
+            name = name_elem.text.strip()
+        except:
+            name = ""
+
+        try:
+            version_elem = driver.find_element(By.XPATH, "//h2[text()='Version']/following-sibling::p")
+            version = version_elem.text.strip()
+        except:
+            version = ""
+
+        if not name:
+            continue
+
         # Wait for CVEs to load after clicking the package
         try:
             wait.until(EC.presence_of_all_elements_located((By.XPATH, "//h2[text()='CVEs']/following-sibling::div[1]//li")))
@@ -180,12 +187,20 @@ for heading in package_headings:
                 cves.add(full_text)
         cves = sorted(cves)  # convert to sorted list
 
+        # Extract CPE name
+        try:
+            cpe_elem = driver.find_element(By.XPATH, "//h2[text()='cpe name']/following-sibling::p")
+            cpe_name = cpe_elem.text.strip()
+        except:
+            cpe_name = ""
+
         # Save the extracted information into the data dictionary
         data1[name] = {
             "package_name": name,
             "package_version": version,
-            "cves": cves,
-            "cve_count": len(cves)
+            "cpe_name": cpe_name,
+            "cve_count": len(cves),
+            "cves": cves
         }
 
     # Handle exceptions gracefully and print error message if package processing fails
