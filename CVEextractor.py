@@ -10,7 +10,7 @@ import re
 
 # === Configuration ===
 # Define the project name you want to analyze. Update this value to switch projects.
-project_name = "your_project_name"  # Change this to the desired project name
+project_name = "SP_sample-3.ima"  # Change this to the desired project name
 
 # === Setup ===
 # Initialize Chrome browser with a persistent user profile to retain session data (e.g., cookies)
@@ -38,9 +38,9 @@ try:
         password_field = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='password'][placeholder='Password']")))
 
         email_field.click()
-        email_field.send_keys("your_email_address")
+        email_field.send_keys("na24b021@smail.iitm.ac.in")
         password_field.click()
-        password_field.send_keys("your_password")
+        password_field.send_keys("dgadcEcuo1l")
 
         login_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']")))
         login_button.click()
@@ -90,31 +90,25 @@ package_url = driver.current_url
 data1 = {}
 
 # Locate package blocks and extract their headings, including hover-based full titles when truncated
-package_blocks = driver.find_elements(By.CSS_SELECTOR, "div.css-3ajk5, div.css-itplzt")
+package_blocks = driver.find_elements(By.CSS_SELECTOR, "div.css-1jlpasf, div.css-13igt5i")
 package_headings = []
 for block in package_blocks:
-    title_attr = block.get_attribute("title")
-    if title_attr:
-        clean_title = title_attr.strip()
-        if clean_title not in package_headings:
-            package_headings.append(clean_title)
-    else:
-        try:
-            h2 = block.find_element(By.TAG_NAME, "h2")
-            clean_title = h2.text.strip()
-            if clean_title not in package_headings:
-                package_headings.append(clean_title)
-        except:
-            continue
+    try:
+        name_elem = block.find_element(By.CSS_SELECTOR, "p.chakra-text.css-5crqjj")
+        version_elem = block.find_element(By.CSS_SELECTOR, "p.chakra-text.css-669a8z")
+        visible = f"{name_elem.text.strip()}({version_elem.text.strip()})"
+    except:
+        continue
 
-# Filter out duplicate and irrelevant package headings (e.g., ones with 0 CVEs)
-package_headings = [
-    h for h in package_headings
-    if h.strip() and not (
-        h.endswith(")0") or
-        (len(h) > 1 and h[-1] == "0" and not h[-2].isdigit())
-    )
-]
+    # Extract CVE count from the badge
+    try:
+        badge_elem = block.find_element(By.CSS_SELECTOR, "span.chakra-badge")
+        cve_count_text = badge_elem.text.strip()
+        if cve_count_text.isdigit() and int(cve_count_text) > 0:
+            if visible not in package_headings:
+                package_headings.append(visible)
+    except:
+        continue
 
 print(f"Found {len(package_headings)} packages with CVEs")
 
@@ -128,19 +122,14 @@ for heading in package_headings:
         time.sleep(2)
 
         # Locate the matching package block, hover if needed, and click to open details in the right pane
-        pkg_blocks = driver.find_elements(By.CSS_SELECTOR, "div.css-3ajk5, div.css-itplzt")
+        pkg_blocks = driver.find_elements(By.CSS_SELECTOR, "div.css-1jlpasf, div.css-13igt5i")
         for block in pkg_blocks:
             try:
-                h2 = block.find_element(By.TAG_NAME, "h2")
-                visible = h2.text.strip()
-                if visible[-5:-2] == "...":
-                    webdriver.ActionChains(driver).move_to_element(h2).perform()
-                    title_attr = h2.get_attribute("title") or block.get_attribute("title")
-                    match_heading = title_attr.strip() if title_attr else visible
-                else:
-                    match_heading = visible
+                name_elem = block.find_element(By.CSS_SELECTOR, "p.chakra-text.css-5crqjj")
+                version_elem = block.find_element(By.CSS_SELECTOR, "p.chakra-text.css-669a8z")
+                visible = f"{name_elem.text.strip()}({version_elem.text.strip()})"
 
-                if match_heading.strip() == heading.strip():
+                if visible.strip() == heading.strip():
                     driver.execute_script("arguments[0].scrollIntoView(true);", block)
                     time.sleep(0.5)
                     driver.execute_script("arguments[0].click();", block)
