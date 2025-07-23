@@ -2,7 +2,7 @@ import os
 from PIL import Image
 
 # Define the base screenshots path
-base_path = "/Users/ag/Payatu/Selenium/screenshots"
+base_path = "your_path"
 
 # Supported image formats
 image_extensions = [".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".webp"]
