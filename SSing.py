@@ -38,9 +38,9 @@ try:
         password_field = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='password'][placeholder='Password']")))
 
         email_field.click()
-        email_field.send_keys("na24b021@smail.iitm.ac.in")
+        email_field.send_keys("email_address")
         password_field.click()
-        password_field.send_keys("dgadcEcuo1l")
+        password_field.send_keys("password")
 
         login_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']")))
         login_button.click()
